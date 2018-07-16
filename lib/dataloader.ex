@@ -61,6 +61,7 @@ defmodule Dataloader do
   @type source_name :: any
 
   @default_timeout 15_000
+  def default_timeout, do: @default_timeout
 
   @spec new([option]) :: t
   def new(opts \\ []), do: %__MODULE__{options: opts}

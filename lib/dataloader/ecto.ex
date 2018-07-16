@@ -230,12 +230,7 @@ if Code.ensure_loaded?(Ecto) do
 
     defimpl Dataloader.Source do
       def run(source) do
-        results =
-          source.batches
-          |> Dataloader.pmap(
-            &run_batch(&1, source),
-            timeout: source.options[:timeout] || 15_000
-          )
+        results = pmap(source)
 
         results =
           Map.merge(source.results, results, fn _, v1, v2 ->
@@ -247,9 +242,20 @@ if Code.ensure_loaded?(Ecto) do
 
       def fetch(%{results: results} = source, batch, item) do
         batch = normalize_key(batch, source.default_params)
+
         {batch_key, item_key, _item} = get_keys(batch, item)
 
+        # HACK to get it passing stuff through
+        {type, _1, _2, _3, _4, _5} = batch_key
+
+        batch_key =
+          case type do
+            :queryable -> {batch_key, MapSet.new([{item_key, item_key}])}
+            :assoc -> {batch_key, MapSet.new([{item_key, item}])}
+          end
+
         with {:ok, batch} <- Map.fetch(results, batch_key) do
+          {:ok, {_batch_key, batch}} = batch
           Map.fetch(batch, item_key)
         end
       end
@@ -295,6 +301,57 @@ if Code.ensure_loaded?(Ecto) do
 
       def timeout(%{options: options}) do
         options[:timeout]
+      end
+
+      defp pmap(source) do
+        options = [
+          timeout: source.options[:timeout] || Dataloader.default_timeout(),
+          on_timeout: :kill_task
+        ]
+
+        # This supervisor exists to help ensure that the spawned tasks will die as
+        # promptly as possible if the current process is killed.
+        {:ok, task_super} = Task.Supervisor.start_link([])
+
+        # The intermediary task is spawned here so that the `:trap_exit` flag does
+        # not lead to rogue behaviour within the current process. This could happen
+        # if the current process is linked to something, and then that something
+        # dies in the middle of us loading stuff.
+        task =
+          Task.async(fn ->
+            # The purpose of `:trap_exit` here is so that we can ensure that any failures
+            # within the tasks do not kill the current process. We want to get results
+            # back no matter what.
+            Process.flag(:trap_exit, true)
+
+            results =
+              task_super
+              |> Task.Supervisor.async_stream(source.batches, &run_batch(&1, source), options)
+              |> Enum.map(fn
+                {:ok, result} -> {:ok, result}
+                {:exit, reason} -> {:error, reason}
+              end)
+
+            # TODO: What about duplicate keys? I'm not sure this is enough. Write
+            # some tests to clarify the behaviour here
+            #
+            # TODO: When called from `Dataloader.run/1`, the items are a list of
+            # sources, so keying the results map off them is fine. But when we're
+            # calling with sources, this appears to be a `{batch_key, batch}`
+            # tuple, which makes this a bit odd to key off; or maybe not? Needs a
+            # bit more thought.
+            #
+
+            source.batches
+            # |> IO.inspect()
+            |> Enum.zip(results)
+            # |> IO.inspect()
+            |> Map.new()
+          end)
+
+        # The infinity is safe here because the internal
+        # tasks all have their own timeout.
+        Task.await(task, :infinity)
       end
 
       defp chase_down_queryable([field], schema) do
@@ -416,6 +473,8 @@ if Code.ensure_loaded?(Ecto) do
       end
 
       defp run_batch({{:assoc, schema, pid, field, queryable, opts} = key, records}, source) do
+        # IO.inspect(binding(), label: "Run batch for :assoc")
+
         {ids, records} = Enum.unzip(records)
 
         query = source.query.(queryable, opts)
@@ -431,7 +490,10 @@ if Code.ensure_loaded?(Ecto) do
           |> source.repo.preload([{field, query}], repo_opts)
           |> Enum.map(&Map.get(&1, field))
 
+        # |> IO.inspect(label: "Records result")
+
         {key, Map.new(Enum.zip(ids, results))}
+        # |> IO.inspect(label: "Actual cannibal, Shia LaBeouf")
       end
 
       defp cardinality_mapper(:many, _) do

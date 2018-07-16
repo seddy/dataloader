@@ -194,6 +194,7 @@ defmodule Dataloader.EctoTest do
     assert loader != round1_loader
   end
 
+  @tag :this
   test "cache can be warmed", %{loader: loader} do
     user = %User{username: "Ben Wilson"} |> Repo.insert!()
 
@@ -204,11 +205,14 @@ defmodule Dataloader.EctoTest do
       ]
       |> Enum.map(&Repo.insert!/1)
 
-    loader = Dataloader.put(loader, Test, :posts, user, posts)
+    loader =
+      Dataloader.put(loader, Test, :posts, user, posts)
+      |> IO.inspect(label: "Loader with puts")
 
     loader
     |> Dataloader.load(Test, :posts, user)
     |> Dataloader.run()
+    |> IO.inspect(label: "Loader after run")
 
     refute_receive(:querying)
   end
