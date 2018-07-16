@@ -263,6 +263,7 @@ if Code.ensure_loaded?(Ecto) do
             source.results,
             batch_key,
             %{item_key => result},
+            # TODO: I don't think the function here does what we think
             &Map.put(&1, item_key, result)
           )
 

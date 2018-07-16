@@ -136,6 +136,7 @@ defmodule Dataloader do
   # the way I've crowbarred in `KV`, need to revisit this.
   defp do_get({:ok, {:ok, {:error, reason}}}), do: raise(Dataloader.GetError, inspect(reason))
   defp do_get({:ok, {:ok, val}}), do: val
+  defp do_get({:ok, {:error, reason}}), do: raise(Dataloader.GetError, inspect(reason))
 
   # These two clauses are primarily for backwards compatibility with sources
   # that aren't returning appropriate ok/error tuples. This may or may not
