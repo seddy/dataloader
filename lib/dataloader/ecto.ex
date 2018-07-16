@@ -233,8 +233,8 @@ if Code.ensure_loaded?(Ecto) do
         results = pmap(source)
 
         results =
-          Map.merge(source.results, results, fn _, v1, v2 ->
-            Map.merge(v1, v2)
+          Map.merge(source.results, results, fn _, {:ok, v1}, {:ok, v2} ->
+            {:ok, Map.merge(v1, v2)}
           end)
 
         %{source | results: results, batches: %{}}
@@ -245,20 +245,8 @@ if Code.ensure_loaded?(Ecto) do
 
         {batch_key, item_key, _item} = get_keys(batch, item)
 
-        # HACK to get it passing stuff through
-        {type, _1, _2, _3, _4, _5} = batch_key
-
-        batch_key =
-          case type do
-            :queryable -> {batch_key, MapSet.new([{item_key, item_key}])}
-            :assoc -> {batch_key, MapSet.new([{item_key, item}])}
-          end
-
-        with {:ok, batch} <- Map.fetch(results, batch_key) do
-          {:ok, {_batch_key, batch}} = batch
+        with {:ok, {:ok, batch}} <- Map.fetch(results, batch_key) do
           Map.fetch(batch, item_key)
-        else
-          thing -> IO.inspect(thing, label: "THINGY")
         end
       end
 
@@ -330,7 +318,7 @@ if Code.ensure_loaded?(Ecto) do
               task_super
               |> Task.Supervisor.async_stream(source.batches, &run_batch(&1, source), options)
               |> Enum.map(fn
-                {:ok, result} -> {:ok, result}
+                {:ok, {_key, result}} -> {:ok, result}
                 {:exit, reason} -> {:error, reason}
               end)
 
@@ -345,9 +333,8 @@ if Code.ensure_loaded?(Ecto) do
             #
 
             source.batches
-            # |> IO.inspect()
+            |> Enum.map(fn {key, _set} -> key end)
             |> Enum.zip(results)
-            # |> IO.inspect()
             |> Map.new()
           end)
 
@@ -389,7 +376,6 @@ if Code.ensure_loaded?(Ecto) do
       end
 
       defp get_keys({{cardinality, queryable}, opts}, value) when is_atom(queryable) do
-        IO.inspect(binding(), label: "get_keys/2 args")
         {_, col, value} = normalize_value(queryable, value)
         {{:queryable, self(), queryable, cardinality, col, opts}, value, value}
       end
@@ -476,8 +462,6 @@ if Code.ensure_loaded?(Ecto) do
       end
 
       defp run_batch({{:assoc, schema, pid, field, queryable, opts} = key, records}, source) do
-        # IO.inspect(binding(), label: "Run batch for :assoc")
-
         {ids, records} = Enum.unzip(records)
 
         query = source.query.(queryable, opts)
@@ -493,10 +477,7 @@ if Code.ensure_loaded?(Ecto) do
           |> source.repo.preload([{field, query}], repo_opts)
           |> Enum.map(&Map.get(&1, field))
 
-        # |> IO.inspect(label: "Records result")
-
         {key, Map.new(Enum.zip(ids, results))}
-        # |> IO.inspect(label: "Actual cannibal, Shia LaBeouf")
       end
 
       defp cardinality_mapper(:many, _) do
