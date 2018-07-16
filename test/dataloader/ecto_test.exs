@@ -194,7 +194,6 @@ defmodule Dataloader.EctoTest do
     assert loader != round1_loader
   end
 
-  @tag :this
   test "cache can be warmed", %{loader: loader} do
     user = %User{username: "Ben Wilson"} |> Repo.insert!()
 

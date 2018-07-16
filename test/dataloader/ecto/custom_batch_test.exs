@@ -58,6 +58,7 @@ defmodule Dataloader.Ecto.CustomBatchTest do
     Dataloader.Ecto.run_batch(Repo, queryable, query, col, inputs, repo_opts)
   end
 
+  @tag :this
   test "basic loading of one thing", %{loader: loader} do
     user1 = %User{username: "Ben Wilson"} |> Repo.insert!()
     user2 = %User{username: "Ben Wilson"} |> Repo.insert!()

@@ -257,6 +257,8 @@ if Code.ensure_loaded?(Ecto) do
         with {:ok, batch} <- Map.fetch(results, batch_key) do
           {:ok, {_batch_key, batch}} = batch
           Map.fetch(batch, item_key)
+        else
+          thing -> IO.inspect(thing, label: "THINGY")
         end
       end
 
@@ -387,6 +389,7 @@ if Code.ensure_loaded?(Ecto) do
       end
 
       defp get_keys({{cardinality, queryable}, opts}, value) when is_atom(queryable) do
+        IO.inspect(binding(), label: "get_keys/2 args")
         {_, col, value} = normalize_value(queryable, value)
         {{:queryable, self(), queryable, cardinality, col, opts}, value, value}
       end
