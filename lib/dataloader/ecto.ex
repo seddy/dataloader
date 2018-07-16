@@ -323,16 +323,6 @@ if Code.ensure_loaded?(Ecto) do
                 {:exit, reason} -> {:error, reason}
               end)
 
-            # TODO: What about duplicate keys? I'm not sure this is enough. Write
-            # some tests to clarify the behaviour here
-            #
-            # TODO: When called from `Dataloader.run/1`, the items are a list of
-            # sources, so keying the results map off them is fine. But when we're
-            # calling with sources, this appears to be a `{batch_key, batch}`
-            # tuple, which makes this a bit odd to key off; or maybe not? Needs a
-            # bit more thought.
-            #
-
             source.batches
             |> Enum.map(fn {key, _set} -> key end)
             |> Enum.zip(results)
