@@ -84,7 +84,7 @@ defmodule Dataloader.KV do
 
     def fetch(source, batch_key, id) do
       with {:ok, batch} <- Map.fetch(source.results, batch_key) do
-        {:ok, Map.fetch(batch, id)}
+        Map.fetch(batch, id)
       end
     end
 

@@ -131,19 +131,7 @@ defmodule Dataloader do
     |> do_get
   end
 
-  # TODO: The nested ok's here are horrendous, as is the nil case. I need to
-  # tidy this up to be more sane; it's likely because of the nested pmaps and
-  # the way I've crowbarred in `KV`, need to revisit this.
-  defp do_get({:ok, {:ok, {:error, reason}}}), do: raise(Dataloader.GetError, inspect(reason))
-  defp do_get({:ok, {:ok, val}}), do: val
   defp do_get({:ok, {:error, reason}}), do: raise(Dataloader.GetError, inspect(reason))
-
-  # These two clauses are primarily for backwards compatibility with sources
-  # that aren't returning appropriate ok/error tuples. This may or may not
-  # survive the full refactor though.
-  #
-  # NOTE: Raising on error is a new behaviour though, that should arguably just
-  # be `nil` if this is just for backwards compatibility
   defp do_get({:ok, val}), do: val
   defp do_get(:error), do: raise(Dataloader.GetError)
 
