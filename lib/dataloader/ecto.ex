@@ -230,7 +230,7 @@ if Code.ensure_loaded?(Ecto) do
 
     defimpl Dataloader.Source do
       def run(source) do
-        results = pmap(source)
+        results = Dataloader.async_safely(__MODULE__, :run_batches, [source])
 
         results =
           Map.merge(source.results, results, fn _, {:ok, v1}, {:ok, v2} ->
@@ -292,46 +292,6 @@ if Code.ensure_loaded?(Ecto) do
 
       def timeout(%{options: options}) do
         options[:timeout]
-      end
-
-      defp pmap(source) do
-        options = [
-          timeout: source.options[:timeout] || Dataloader.default_timeout(),
-          on_timeout: :kill_task
-        ]
-
-        # This supervisor exists to help ensure that the spawned tasks will die as
-        # promptly as possible if the current process is killed.
-        {:ok, task_super} = Task.Supervisor.start_link([])
-
-        # The intermediary task is spawned here so that the `:trap_exit` flag does
-        # not lead to rogue behaviour within the current process. This could happen
-        # if the current process is linked to something, and then that something
-        # dies in the middle of us loading stuff.
-        task =
-          Task.async(fn ->
-            # The purpose of `:trap_exit` here is so that we can ensure that any failures
-            # within the tasks do not kill the current process. We want to get results
-            # back no matter what.
-            Process.flag(:trap_exit, true)
-
-            results =
-              task_super
-              |> Task.Supervisor.async_stream(source.batches, &run_batch(&1, source), options)
-              |> Enum.map(fn
-                {:ok, {_key, result}} -> {:ok, result}
-                {:exit, reason} -> {:error, reason}
-              end)
-
-            source.batches
-            |> Enum.map(fn {key, _set} -> key end)
-            |> Enum.zip(results)
-            |> Map.new()
-          end)
-
-        # The infinity is safe here because the internal
-        # tasks all have their own timeout.
-        Task.await(task, :infinity)
       end
 
       defp chase_down_queryable([field], schema) do
@@ -425,6 +385,26 @@ if Code.ensure_loaded?(Ecto) do
 
       defp normalize_key(key, default_params) do
         {key, default_params}
+      end
+
+      def run_batches(task_supervisor, source) do
+        options = [
+          timeout: source.options[:timeout] || Dataloader.default_timeout(),
+          on_timeout: :kill_task
+        ]
+
+        results =
+          task_supervisor
+          |> Task.Supervisor.async_stream(source.batches, &run_batch(&1, source), options)
+          |> Enum.map(fn
+            {:ok, {_key, result}} -> {:ok, result}
+            {:exit, reason} -> {:error, reason}
+          end)
+
+        source.batches
+        |> Enum.map(fn {key, _set} -> key end)
+        |> Enum.zip(results)
+        |> Map.new()
       end
 
       defp run_batch(

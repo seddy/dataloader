@@ -2,6 +2,8 @@ defmodule DataloaderTest do
   use ExUnit.Case
   import ExUnit.CaptureLog
 
+  doctest Dataloader
+
   describe "run/1" do
     test "returns an ok tuple on success" do
       source = %Dataloader.TestSource{

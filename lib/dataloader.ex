@@ -97,11 +97,11 @@ defmodule Dataloader do
       fun = fn {name, source} -> {name, Source.run(source)} end
 
       sources =
-        dataloader.sources
-        |> pmap(
+        async_safely(__MODULE__, :run_tasks, [
+          dataloader.sources,
           fun,
-          timeout: dataloader_timeout(dataloader)
-        )
+          [timeout: dataloader_timeout(dataloader)]
+        ])
         |> Enum.map(fn
           {_source, {:ok, {name, source}}} -> {name, source}
           {_source, {:error, reason}} -> {:error, reason}
@@ -164,49 +164,28 @@ defmodule Dataloader do
     loader.sources[source_name] || raise "Source does not exist: #{inspect(source_name)}"
   end
 
-  @doc false
-  # This function should be documented more completely, as it's a core function
-  # used by both this module and both predefined sources. Spec should be (I
-  # think!):
-  #
-  # @spec pmap(list(), fun(), keyword()) :: map({any(), any()})
-  #
-  # Current constraints that I'm questioning in this PR:
-  #
-  # - `fun` must return a `{key, result}` tuple
-  # - If any `fun` errors for whatever reason, nothing gets added to the return
-  #   value for that item, effectively swallowing any error
-  # - There's not necessarily a relation between the `items` parameter and the
-  #   keys in the returned map, so debugging is hard and the code is difficult
-  #   to reason about
-  #
-  # Proposed changes:
-  #
-  # - Return a map where the keys are the originally passed-in `items`, rather
-  #   than letting `fun` define them.
-  # - `fun` should return an `:ok`/`:error` tuple with the result of the query.
-  #   We have the keys already in `items`, so let's return a map keyed off of
-  #   that. The key reason for this is that we now have all the info we need
-  #   when accessing the data to either raise or return, rather than losing it
-  #   completely.
-  #     - NOTE: This isn't perfect yet though because of the reuse between
-  #     `Dataloader.run` and `Source.run` implementations. The former has no
-  #     concept of "keys" because it's just passing in sources  and assuming
-  #     they come out the same way at the other end, whereas the other one has
-  #     a concept of "keys" backed into it but hidden as part of a tuple in
-  #     `items`. This is the main reason I consider this ripe for a refactor...
-  # - Document!
-  # - Consider renaming and extracting from here
-  #
-  def pmap(items, fun, opts \\ []) do
-    options = [
-      timeout: opts[:timeout] || @default_timeout,
-      on_timeout: :kill_task
-    ]
+  @doc """
+  This is a helper method to run a set of async tasks in a separate supervision
+  tree which:
 
+  1. Is run by a supervisor linked to the main process. This ensures any async
+     tasks will get killed if the main process is killed.
+  2. Spawns a separate task which traps exits for running the provided
+     function. This ensures we will always have some output, but are not calling
+     setting `:trap_exit` on the main process.
+
+  **NOTE**: The provided `fun` must accept a `Task.Supervisor` as its first
+  argument, as this prepends the relevant supervisor to `args`
+
+  See `run_tasks/4` for an example of a `fun` implementation, this will return
+  whatever that returns.
+  """
+  @spec async_safely(module(), fun(), keyword()) :: any()
+  def async_safely(mod, fun, args \\ []) do
     # This supervisor exists to help ensure that the spawned tasks will die as
     # promptly as possible if the current process is killed.
-    {:ok, task_super} = Task.Supervisor.start_link([])
+    {:ok, task_supervisor} = Task.Supervisor.start_link([])
+    args = [task_supervisor | args]
 
     # The intermediary task is spawned here so that the `:trap_exit` flag does
     # not lead to rogue behaviour within the current process. This could happen
@@ -219,20 +198,71 @@ defmodule Dataloader do
         # back no matter what.
         Process.flag(:trap_exit, true)
 
-        results =
-          task_super
-          |> Task.Supervisor.async_stream(items, fun, options)
-          |> Enum.map(fn
-            {:ok, result} -> {:ok, result}
-            {:exit, reason} -> {:error, reason}
-          end)
-
-        Enum.zip(items, results)
-        |> Map.new()
+        apply(mod, fun, args)
       end)
 
     # The infinity is safe here because the internal
     # tasks all have their own timeout.
     Task.await(task, :infinity)
+  end
+
+  @doc ~S"""
+  This helper function will call `fun`on all `items` asynchronously, returning
+  a map of `:ok`/`:error` tuples, keyed off the `items`. For example:
+
+      iex> {:ok, task_supervisor} = Task.Supervisor.start_link([])
+      ...> Dataloader.run_tasks(task_supervisor, [1,2,3], fn x -> x * x end, [])
+      %{
+        1 => {:ok, 1},
+        2 => {:ok, 4},
+        3 => {:ok, 9}
+      }
+
+  Similarly, for errors:
+
+      iex> {:ok, task_supervisor} = Task.Supervisor.start_link([])
+      ...> Dataloader.run_tasks(task_supervisor, [1,2,3], fn _x -> Process.sleep(5) end, [timeout: 1])
+      %{
+        1 => {:error, :timeout},
+        2 => {:error, :timeout},
+        3 => {:error, :timeout}
+      }
+  """
+  @spec run_tasks(Task.Supervisor.t(), list(), fun(), keyword()) :: map()
+  def run_tasks(task_supervisor, items, fun, opts \\ []) do
+    task_opts = [
+      timeout: opts[:timeout] || @default_timeout,
+      on_timeout: :kill_task
+    ]
+
+    results =
+      task_supervisor
+      |> Task.Supervisor.async_stream(items, fun, task_opts)
+      |> Enum.map(fn
+        {:ok, result} -> {:ok, result}
+        {:exit, reason} -> {:error, reason}
+      end)
+
+    Enum.zip(items, results)
+    |> Map.new()
+  end
+
+  @doc """
+  ## DEPRECATED
+
+  This function has been deprecated in favour of `async_safely/3`. This used to
+  be used by both the `Dataloader` module for running multiple source queries
+  concurrently, and the `KV` and `Ecto` sources to actually run separate batch
+  fetches (e.g. for `Posts` and `Users` at the same time).
+
+  The problem was that the behaviour between the sources and the parent
+  `Dataloader` was actually slightly different. The `Dataloader`-specific
+  behaviour has been pulled out into `run_tasks/4`
+
+  Please use `async_safely` instead of this for fetching data from sources
+  """
+  @spec pmap(list(), fun(), keyword()) :: map()
+  def pmap(items, fun, opts \\ []) do
+    async_safely(__MODULE__, :run_tasks, [items, fun, opts])
   end
 end
