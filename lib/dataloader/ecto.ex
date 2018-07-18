@@ -253,7 +253,8 @@ if Code.ensure_loaded?(Ecto) do
         end
       end
 
-      defp fetch_item_from_batch(tried_and_failed = {:error, _reason}, _item_key), do: tried_and_failed
+      defp fetch_item_from_batch(tried_and_failed = {:error, _reason}, _item_key),
+        do: tried_and_failed
 
       defp fetch_item_from_batch({:ok, batch}, item_key) do
         case Map.fetch(batch, item_key) do

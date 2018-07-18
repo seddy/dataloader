@@ -17,7 +17,7 @@ defmodule DataloaderTest do
     end
   end
 
-  defp query(_batch_key, "explode"), do: raise "hell"
+  defp query(_batch_key, "explode"), do: raise("hell")
 
   defp query(batch_key, id) do
     item =
@@ -35,7 +35,7 @@ defmodule DataloaderTest do
     [loader: loader]
   end
 
-  describe "get methods when configured to raise an error"do
+  describe "get methods when configured to raise an error" do
     test "get/4 returns a value when successful", %{loader: loader} do
       result =
         loader
@@ -54,9 +54,9 @@ defmodule DataloaderTest do
         |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
 
       assert result == [
-        [id: "ben", username: "Ben Wilson"],
-        [id: "bruce", username: "Bruce Williams"]
-      ]
+               [id: "ben", username: "Ben Wilson"],
+               [id: "bruce", username: "Bruce Williams"]
+             ]
     end
 
     test "get/4 raises an exception when there was an error loading the data", %{loader: loader} do
@@ -67,7 +67,7 @@ defmodule DataloaderTest do
             |> Dataloader.load(:test, :users, "explode")
             |> Dataloader.run()
 
-          assert_raise  Dataloader.GetError, ~r/hell/, fn ->
+          assert_raise Dataloader.GetError, ~r/hell/, fn ->
             loader
             |> Dataloader.get(:test, :users, "explode")
           end
@@ -76,7 +76,9 @@ defmodule DataloaderTest do
       assert log =~ "hell"
     end
 
-    test "get_many/4 raises an exception when there was an error loading the data", %{loader: loader} do
+    test "get_many/4 raises an exception when there was an error loading the data", %{
+      loader: loader
+    } do
       log =
         capture_log(fn ->
           loader =
@@ -84,7 +86,7 @@ defmodule DataloaderTest do
             |> Dataloader.load_many(:test, :users, ["explode"])
             |> Dataloader.run()
 
-          assert_raise  Dataloader.GetError, ~r/hell/, fn ->
+          assert_raise Dataloader.GetError, ~r/hell/, fn ->
             loader
             |> Dataloader.get_many(:test, :users, ["explode"])
           end
@@ -96,7 +98,7 @@ defmodule DataloaderTest do
 
   describe "get methods when configured to return `nil` on error" do
     setup %{loader: loader} do
-      [loader: %{ loader | options: [get_policy: :return_nil_on_error] }]
+      [loader: %{loader | options: [get_policy: :return_nil_on_error]}]
     end
 
     test "get/4 returns a value when successful", %{loader: loader} do
@@ -117,12 +119,14 @@ defmodule DataloaderTest do
         |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
 
       assert result == [
-        [id: "ben", username: "Ben Wilson"],
-        [id: "bruce", username: "Bruce Williams"]
-      ]
+               [id: "ben", username: "Ben Wilson"],
+               [id: "bruce", username: "Bruce Williams"]
+             ]
     end
 
-    test "get/4 logs the exception and returns `nil` when there was an error loading the data", %{loader: loader} do
+    test "get/4 logs the exception and returns `nil` when there was an error loading the data", %{
+      loader: loader
+    } do
       log =
         capture_log(fn ->
           result =
@@ -137,7 +141,8 @@ defmodule DataloaderTest do
       assert log =~ "hell"
     end
 
-    test "get_many/4 logs the exception and returns `nil` when there was an error loading the data", %{loader: loader} do
+    test "get_many/4 logs the exception and returns `nil` when there was an error loading the data",
+         %{loader: loader} do
       log =
         capture_log(fn ->
           result =
@@ -155,7 +160,7 @@ defmodule DataloaderTest do
 
   describe "get methods when configured to return ok/error tuples" do
     setup %{loader: loader} do
-      [loader: %{ loader | options: [get_policy: :tuples] }]
+      [loader: %{loader | options: [get_policy: :tuples]}]
     end
 
     test "get/4 returns an {:ok, value} tuple when successful", %{loader: loader} do
@@ -176,12 +181,14 @@ defmodule DataloaderTest do
         |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
 
       assert result == [
-        {:ok, [id: "ben", username: "Ben Wilson"]},
-        {:ok, [id: "bruce", username: "Bruce Williams"]}
-      ]
+               {:ok, [id: "ben", username: "Ben Wilson"]},
+               {:ok, [id: "bruce", username: "Bruce Williams"]}
+             ]
     end
 
-    test "get/4 returns an {:error, reason} tuple when there was an error loading the data", %{loader: loader} do
+    test "get/4 returns an {:error, reason} tuple when there was an error loading the data", %{
+      loader: loader
+    } do
       log =
         capture_log(fn ->
           result =
@@ -196,7 +203,8 @@ defmodule DataloaderTest do
       assert log =~ "hell"
     end
 
-    test "get_many/4 returns a list of {:error, reason} tuples when there was an error loading the data", %{loader: loader} do
+    test "get_many/4 returns a list of {:error, reason} tuples when there was an error loading the data",
+         %{loader: loader} do
       log =
         capture_log(fn ->
           result =
@@ -206,9 +214,9 @@ defmodule DataloaderTest do
             |> Dataloader.get_many(:test, :users, ["ben", "explode"])
 
           assert [
-            {:error, {%RuntimeError{message: "hell"}, _stacktrace1}},
-            {:error, {%RuntimeError{message: "hell"}, _stacktrace2}}
-          ] = result
+                   {:error, {%RuntimeError{message: "hell"}, _stacktrace1}},
+                   {:error, {%RuntimeError{message: "hell"}, _stacktrace2}}
+                 ] = result
         end)
 
       assert log =~ "hell"
