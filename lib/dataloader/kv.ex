@@ -43,8 +43,6 @@ defmodule Dataloader.KV do
       end)
     end
 
-    # TODO: Why is this different from success? The data being passed around
-    # must still be a little inconsistent, so need to dig in a bit more
     defp merge_errors(acc, {batch_key, batch}, reason) do
       errors =
         batch
