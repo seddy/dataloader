@@ -136,7 +136,7 @@ defmodule Dataloader.KVTest do
   end
 
   test "raises default error if not loaded yet", %{loader: loader} do
-    assert_raise Dataloader.GetError, ~r/Failed to get data/, fn ->
+    assert_raise Dataloader.GetError, ~r/Unable to find batch :users/, fn ->
       loader
       |> Dataloader.get(Test, :users, "doesn't exist")
     end

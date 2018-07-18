@@ -131,9 +131,8 @@ defmodule Dataloader do
     |> do_get
   end
 
-  defp do_get({:ok, {:error, reason}}), do: raise(Dataloader.GetError, inspect(reason))
   defp do_get({:ok, val}), do: val
-  defp do_get(:error), do: raise(Dataloader.GetError)
+  defp do_get({:error, reason}), do: raise(Dataloader.GetError, inspect(reason))
 
   @spec get_many(t, source_name, any, any) :: [any] | no_return()
   def get_many(loader, source, batch_key, item_keys) when is_list(item_keys) do

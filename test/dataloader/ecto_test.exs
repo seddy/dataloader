@@ -311,7 +311,7 @@ defmodule Dataloader.EctoTest do
   end
 
   test "when the query fails to find a record it raises an error", %{loader: loader} do
-    assert_raise Dataloader.GetError, ~r/Failed to get data/, fn ->
+    assert_raise Dataloader.GetError, ~r/Unable to find batch/, fn ->
       Dataloader.get(loader, Test, User, "doesn't exist")
     end
   end

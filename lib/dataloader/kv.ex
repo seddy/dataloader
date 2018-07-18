@@ -72,7 +72,7 @@ defmodule Dataloader.KV do
 
     def load(source, batch_key, id) do
       case fetch(source, batch_key, id) do
-        :error ->
+        {:error, _message} ->
           update_in(source.batches, fn batches ->
             Map.update(batches, batch_key, MapSet.new([id]), &MapSet.put(&1, id))
           end)
@@ -84,9 +84,17 @@ defmodule Dataloader.KV do
 
     def fetch(source, batch_key, id) do
       with {:ok, batch} <- Map.fetch(source.results, batch_key) do
-        Map.fetch(batch, id)
+        case Map.get(batch, id) do
+          {:error, reason} -> {:error, reason}
+          item -> {:ok, item}
+        end
+      else
+        :error ->
+          {:error, "Unable to find batch #{inspect(batch_key)}"}
       end
     end
+
+    # def fetch_item_from_batch({:error, dd})
 
     def run(source) do
       fun = fn {batch_key, ids} ->
