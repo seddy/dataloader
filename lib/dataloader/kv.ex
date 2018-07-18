@@ -94,8 +94,6 @@ defmodule Dataloader.KV do
       end
     end
 
-    # def fetch_item_from_batch({:error, dd})
-
     def run(source) do
       fun = fn {batch_key, ids} ->
         {batch_key, source.load_function.(batch_key, ids)}

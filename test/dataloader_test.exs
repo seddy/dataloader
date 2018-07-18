@@ -4,67 +4,214 @@ defmodule DataloaderTest do
 
   doctest Dataloader
 
-  describe "run/1" do
-    test "returns an ok tuple on success" do
-      source = %Dataloader.TestSource{
-        run: fn _source ->
-          function_that_succeeds = fn
-            1 -> "hello"
-            2 -> "bye"
-          end
+  @data [
+    users: [
+      [id: "ben", username: "Ben Wilson"],
+      [id: "bruce", username: "Bruce Williams"]
+    ]
+  ]
 
-          Dataloader.pmap([1, 2], function_that_succeeds)
-        end
-      }
+  defp query(batch_key, ids = %MapSet{}) do
+    for id <- ids, into: %{} do
+      query(batch_key, id)
+    end
+  end
 
-      dataloader =
-        Dataloader.new()
-        |> Dataloader.add_source(:test, source)
+  defp query(_batch_key, "explode"), do: raise "hell"
 
-      %{sources: sources} = Dataloader.run(dataloader)
+  defp query(batch_key, id) do
+    item =
+      @data[batch_key]
+      |> Enum.find(fn data -> data[:id] == id end)
 
-      assert %{test: %{1 => {:ok, "hello"}, 2 => {:ok, "bye"}}} = sources
+    {id, item}
+  end
+
+  setup do
+    loader =
+      Dataloader.new()
+      |> Dataloader.add_source(:test, Dataloader.KV.new(&query(&1, &2)))
+
+    [loader: loader]
+  end
+
+  describe "get methods when configured to raise an error"do
+    test "get/4 returns a value when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load(:test, :users, "ben")
+        |> Dataloader.run()
+        |> Dataloader.get(:test, :users, "ben")
+
+      assert result == [id: "ben", username: "Ben Wilson"]
     end
 
-    test "returns an error tuple on failure" do
-      source = %Dataloader.TestSource{
-        run: fn _source ->
-          function_that_raises = fn :this_will_raise -> raise "hell" end
-          Dataloader.pmap([:this_will_raise], function_that_raises)
-        end
-      }
+    test "get_many/4 returns a value when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load_many(:test, :users, ["ben", "bruce"])
+        |> Dataloader.run()
+        |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
 
-      dataloader =
-        Dataloader.new()
-        |> Dataloader.add_source(:test, source)
+      assert result == [
+        [id: "ben", username: "Ben Wilson"],
+        [id: "bruce", username: "Bruce Williams"]
+      ]
+    end
 
+    test "get/4 raises an exception when there was an error loading the data", %{loader: loader} do
       log =
         capture_log(fn ->
-          %{sources: sources} = Dataloader.run(dataloader)
+          loader =
+            loader
+            |> Dataloader.load(:test, :users, "explode")
+            |> Dataloader.run()
 
-          assert %{test: %{this_will_raise: {:error, error}}} = sources
-
-          assert inspect(error) =~ ~s(%RuntimeError{message: "hell"})
+          assert_raise  Dataloader.GetError, ~r/hell/, fn ->
+            loader
+            |> Dataloader.get(:test, :users, "explode")
+          end
         end)
 
       assert log =~ "hell"
     end
 
-    test "returns an error if the source times out" do
-      source = %Dataloader.TestSource{
-        run: fn _source ->
-          function_that_times_out = fn :this_will_timeout -> Process.sleep(:timer.seconds(5)) end
-          Dataloader.pmap([:this_will_timeout], function_that_times_out, timeout: 1)
-        end
-      }
+    test "get_many/4 raises an exception when there was an error loading the data", %{loader: loader} do
+      log =
+        capture_log(fn ->
+          loader =
+            loader
+            |> Dataloader.load_many(:test, :users, ["explode"])
+            |> Dataloader.run()
 
-      dataloader =
-        Dataloader.new()
-        |> Dataloader.add_source(:test, source)
+          assert_raise  Dataloader.GetError, ~r/hell/, fn ->
+            loader
+            |> Dataloader.get_many(:test, :users, ["explode"])
+          end
+        end)
 
-      %{sources: sources} = Dataloader.run(dataloader)
+      assert log =~ "hell"
+    end
+  end
 
-      assert %{test: %{this_will_timeout: {:error, :timeout}}} = sources
+  describe "get methods when configured to return `nil` on error" do
+    setup %{loader: loader} do
+      [loader: %{ loader | options: [get_policy: :return_nil_on_error] }]
+    end
+
+    test "get/4 returns a value when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load(:test, :users, "ben")
+        |> Dataloader.run()
+        |> Dataloader.get(:test, :users, "ben")
+
+      assert result == [id: "ben", username: "Ben Wilson"]
+    end
+
+    test "get_many/4 returns values when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load_many(:test, :users, ["ben", "bruce"])
+        |> Dataloader.run()
+        |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
+
+      assert result == [
+        [id: "ben", username: "Ben Wilson"],
+        [id: "bruce", username: "Bruce Williams"]
+      ]
+    end
+
+    test "get/4 logs the exception and returns `nil` when there was an error loading the data", %{loader: loader} do
+      log =
+        capture_log(fn ->
+          result =
+            loader
+            |> Dataloader.load(:test, :users, "explode")
+            |> Dataloader.run()
+            |> Dataloader.get(:test, :users, "explode")
+
+          assert result |> is_nil()
+        end)
+
+      assert log =~ "hell"
+    end
+
+    test "get_many/4 logs the exception and returns `nil` when there was an error loading the data", %{loader: loader} do
+      log =
+        capture_log(fn ->
+          result =
+            loader
+            |> Dataloader.load_many(:test, :users, ["ben", "explode"])
+            |> Dataloader.run()
+            |> Dataloader.get_many(:test, :users, ["ben", "explode"])
+
+          assert result == [nil, nil]
+        end)
+
+      assert log =~ "hell"
+    end
+  end
+
+  describe "get methods when configured to return ok/error tuples" do
+    setup %{loader: loader} do
+      [loader: %{ loader | options: [get_policy: :tuples] }]
+    end
+
+    test "get/4 returns an {:ok, value} tuple when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load(:test, :users, "ben")
+        |> Dataloader.run()
+        |> Dataloader.get(:test, :users, "ben")
+
+      assert result == {:ok, [id: "ben", username: "Ben Wilson"]}
+    end
+
+    test "get_many/4 returns a list of {:ok, value} tuples when successful", %{loader: loader} do
+      result =
+        loader
+        |> Dataloader.load_many(:test, :users, ["ben", "bruce"])
+        |> Dataloader.run()
+        |> Dataloader.get_many(:test, :users, ["ben", "bruce"])
+
+      assert result == [
+        {:ok, [id: "ben", username: "Ben Wilson"]},
+        {:ok, [id: "bruce", username: "Bruce Williams"]}
+      ]
+    end
+
+    test "get/4 returns an {:error, reason} tuple when there was an error loading the data", %{loader: loader} do
+      log =
+        capture_log(fn ->
+          result =
+            loader
+            |> Dataloader.load(:test, :users, "explode")
+            |> Dataloader.run()
+            |> Dataloader.get(:test, :users, "explode")
+
+          assert {:error, {%RuntimeError{message: "hell"}, _stacktrace}} = result
+        end)
+
+      assert log =~ "hell"
+    end
+
+    test "get_many/4 returns a list of {:error, reason} tuples when there was an error loading the data", %{loader: loader} do
+      log =
+        capture_log(fn ->
+          result =
+            loader
+            |> Dataloader.load_many(:test, :users, ["ben", "explode"])
+            |> Dataloader.run()
+            |> Dataloader.get_many(:test, :users, ["ben", "explode"])
+
+          assert [
+            {:error, {%RuntimeError{message: "hell"}, _stacktrace1}},
+            {:error, {%RuntimeError{message: "hell"}, _stacktrace2}}
+          ] = result
+        end)
+
+      assert log =~ "hell"
     end
   end
 end

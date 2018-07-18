@@ -45,6 +45,38 @@ defmodule Dataloader do
   have a different source used for each context. This provides an easy way to
   enforce data access rules within each context. See the `DataLoader.Ecto`
   moduledocs for more details
+
+  ## Options
+
+  There are two configuration options:
+
+  * `timeout` - The maximum timeout to wait for running a source, defaults to
+    the 1s more than the maximum timeout of all added sources. Set with care,
+    timeouts should really only be set on sources.
+  * `get_policy` - This configures how the dataloader will behave when fetching
+    data which may have errored when we tried  to `load` it.
+
+  ### `get_policy`
+
+  There are three implemented behaviours for this:
+
+  * `raise_on_error` (default)- If successful, calling `get/4` or `get_many/4`
+    will return the value. If there was an exception when trying to load any of
+    the data, it will raise that exception
+  * `return_nil_on_error` - Behaves similar to `raise_on_error` but will just
+    return `nil` instead of `raising`. It will still log errors
+  * `tuples` - This will return `{:ok, value}`/`{:error, reason}` tuples
+    depending on a successful or failed load, allowing for more fine-grained
+    error handling if required
+
+  These can be configured on a global way by configuring in your config.exs
+  file, e.g. to configure it to return nil on error:
+
+      config :dataloader,
+        get_policy: :return_nil_on_error
+
+  Alternatively, these can be set on individual `Dataloader` structs when
+  calling `new/1`
   """
   defstruct sources: %{},
             options: []
@@ -57,14 +89,16 @@ defmodule Dataloader do
           options: [option]
         }
 
-  @type option :: {:timeout, pos_integer}
+  @type option :: {:timeout, pos_integer} | {:get_policy, atom()}
   @type source_name :: any
 
   @default_timeout 15_000
   def default_timeout, do: @default_timeout
 
+  @default_get_policy Application.get_env(:dataloader, :get_policy, :raise_on_error)
+
   @spec new([option]) :: t
-  def new(opts \\ []), do: %__MODULE__{options: opts}
+  def new(opts \\ [get_policy: @default_get_policy]), do: %__MODULE__{options: opts}
 
   @spec add_source(t, source_name, Dataloader.Source.t()) :: t
   def add_source(%{sources: sources} = loader, name, source) do
@@ -124,26 +158,31 @@ defmodule Dataloader do
   end
 
   @spec get(t, source_name, any, any) :: any | no_return()
-  def get(loader, source, batch_key, item_key) do
+  def get(loader = %Dataloader{options: options}, source, batch_key, item_key) do
     loader
     |> get_source(source)
     |> Source.fetch(batch_key, item_key)
-    |> do_get
+    |> do_get(options[:get_policy])
   end
 
-  defp do_get({:ok, val}), do: val
-  defp do_get({:error, reason}), do: raise(Dataloader.GetError, inspect(reason))
-
   @spec get_many(t, source_name, any, any) :: [any] | no_return()
-  def get_many(loader, source, batch_key, item_keys) when is_list(item_keys) do
+  def get_many(loader = %Dataloader{options: options}, source, batch_key, item_keys) when is_list(item_keys) do
     source = get_source(loader, source)
 
     for key <- item_keys do
       source
       |> Source.fetch(batch_key, key)
-      |> do_get
+      |> do_get(options[:get_policy])
     end
   end
+
+  defp do_get({:ok, val}, :raise_on_error), do: val
+  defp do_get({:ok, val}, :return_nil_on_error), do: val
+  defp do_get({:ok, val}, :tuples), do: {:ok, val}
+
+  defp do_get({:error, reason}, :raise_on_error), do: raise(Dataloader.GetError, inspect(reason))
+  defp do_get({:error, _reason}, :return_nil_on_error), do: nil
+  defp do_get({:error, reason}, :tuples), do: {:error, reason}
 
   def put(loader, source_name, batch_key, item_key, result) do
     source =

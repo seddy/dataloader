@@ -9,6 +9,7 @@ config :dataloader, Dataloader.TestRepo,
   password: "nested",
   port: 54321
 
-config :dataloader, ecto_repos: [Dataloader.TestRepo]
+config :dataloader,
+  ecto_repos: [Dataloader.TestRepo]
 
 config :logger, level: :warn
