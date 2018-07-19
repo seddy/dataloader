@@ -51,7 +51,7 @@ defmodule Dataloader do
   There are two configuration options:
 
   * `timeout` - The maximum timeout to wait for running a source, defaults to
-    the 1s more than the maximum timeout of all added sources. Set with care,
+    1s more than the maximum timeout of all added sources. Set with care,
     timeouts should really only be set on sources.
   * `get_policy` - This configures how the dataloader will behave when fetching
     data which may have errored when we tried  to `load` it.
