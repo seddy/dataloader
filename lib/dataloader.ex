@@ -246,7 +246,7 @@ defmodule Dataloader do
   end
 
   @doc ~S"""
-  This helper function will call `fun`on all `items` asynchronously, returning
+  This helper function will call `fun` on all `items` asynchronously, returning
   a map of `:ok`/`:error` tuples, keyed off the `items`. For example:
 
       iex> {:ok, task_supervisor} = Task.Supervisor.start_link([])
